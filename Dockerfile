@@ -7,4 +7,4 @@ WORKDIR /app
 COPY manifest.json popup.html popup.css popup.js ./
 COPY images/ ./images/
 
-CMD ["sh", "-c", "mkdir -p /output && zip -r /output/pdf-navigator-extension.zip ."]
+CMD ["sh", "-c", "mkdir -p /output && zip -r /output/pdf-navigator-extension.zip manifest.json popup.html popup.css popup.js images/"]
