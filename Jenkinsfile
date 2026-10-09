@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    options {
+        disableConcurrentBuilds()
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -8,36 +12,53 @@ pipeline {
             }
         }
 
-        stage('Validate Manifest') {
+        stage('Build Docker Image') {
             steps {
                 sh '''
-                    python -c "import json; m=json.load(open('manifest.json')); assert m.get('manifest_version') == 3; print('Manifest V3 is valid')"
+                    docker build -t pdf-navigator-extension:${BUILD_NUMBER} .
                 '''
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Validate Manifest') {
             steps {
-                sh 'docker build -t pdf-navigator-extension:latest .'
+                sh '''
+                    docker run --rm \
+                      --entrypoint sh \
+                      pdf-navigator-extension:${BUILD_NUMBER} \
+                      -c "jq -e '.manifest_version == 3' manifest.json"
+                '''
             }
         }
 
         stage('Package Extension') {
             steps {
                 sh '''
+                    set -eu
+
+                    IMAGE="pdf-navigator-extension:${BUILD_NUMBER}"
+                    CONTAINER="pdf-navigator-package-${BUILD_NUMBER}"
+
                     mkdir -p dist
-                    docker run --rm \
-                      -v "$(pwd)/dist:/output" \
-                      pdf-navigator-extension:latest
-                    unzip -t dist/pdf-navigator-extension.zip
+                    rm -f dist/pdf-navigator-extension.zip
+
+                    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+                    docker create --name "$CONTAINER" "$IMAGE"
+                    docker start -a "$CONTAINER"
+                    docker cp "$CONTAINER:/output/pdf-navigator-extension.zip" dist/
+                    docker rm "$CONTAINER"
+
+                    test -s dist/pdf-navigator-extension.zip
                 '''
             }
         }
 
         stage('Archive Artifact') {
             steps {
-                archiveArtifacts artifacts: 'dist/pdf-navigator-extension.zip',
-                                 fingerprint: true
+                archiveArtifacts(
+                    artifacts: 'dist/pdf-navigator-extension.zip',
+                    fingerprint: true
+                )
             }
         }
     }
